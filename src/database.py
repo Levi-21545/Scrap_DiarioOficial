@@ -9,11 +9,12 @@ Base = declarative_base()
 # Configurar a conexão com o banco de dados
 engine = create_engine(f'mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}')
 
+
 class DiarioItem(Base):
     __tablename__ = 'servidores'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    id_func = Column(String(10), nullable=False)
-    nome = Column(String(60), nullable=False)
+    id_func = Column(String(10), nullable=True)
+    nome = Column(String(60), nullable=True)
     materia = Column(Integer, nullable=False)
     data = Column(Date, nullable=False)
     tipo_vinculo = Column(String(30), nullable=True)

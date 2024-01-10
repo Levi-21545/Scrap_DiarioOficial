@@ -3,6 +3,7 @@ import calendar
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -13,25 +14,29 @@ from database import DiarioItem, Base, engine
 
 from datetime import datetime
 
-# CONTADOR LAÇO PARA PERCORRER TODAS AS PÁGINAS DO FILTRO
+from urllib.parse import urlparse, parse_qs
+
+
+# Início pela página 1 do filtro
 PAGINA = 1
 
-# CONTADOR LAÇO PARA ITERAR TODOS OS MESES
-MES = 1
-ANO = 2022
+# Seleção do ano de exercício
+MES_INICIO = int(input('Digite o mês de início: '))
+ANO = int(input('Digite o ano de exercício: '))
 
 # Configuração para modo headless
 chrome_options = Options()
 chrome_options.add_argument('--headless')
 
-# Inicialize o WebDriver do Chrome
-driver = webdriver.Chrome(options=chrome_options)
+# Inicialização do WebDriver do Chrome
+driver = webdriver.Chrome()
 
-# Criar uma sessão do SQLAlchemy
+# Criando sessão do SQLAlchemy
 Session = sessionmaker(bind=engine)
 session = Session()
 
-for MES in range(1, 13):
+# Percorrendo os 12 meses do ano
+for MES in range(MES_INICIO, 13):
 
     # Descobrir o último dia do mês
     ULTIMO_DIA = calendar.monthrange(ANO, MES)[1]
@@ -50,38 +55,82 @@ for MES in range(1, 13):
         BASE_URL = (f'https://www.diariooficial.rs.gov.br/resultado?'
                     f'td=DOE&pc=&tmi=90&tmd=Recursos%20Humanos&at=Dispensa&di={DATA_INICIO}&df={DATA_FIM}&pg={PAGINA}')
 
-        # Acesse a página inicial
+        # Acessando a página inicial
         driver.get(BASE_URL)
 
-        # Aguarde alguns segundos para garantir que a página seja carregada completamente
-        WebDriverWait(driver, 10).until(
-            EC.visibility_of_element_located((By.CLASS_NAME, 'conteudo'))
-        )
+        try:
+            # Aguardar alguns segundos para garantir que a página seja carregada completamente
+            WebDriverWait(driver, 10).until(
+                EC.visibility_of_element_located((By.CLASS_NAME, 'conteudo')),
+            )
+        except TimeoutException:
+            # Redefinir a guia original e tentar recarregar
+            driver.switch_to.window(driver.window_handles[0])
+            driver.refresh()
+            continue
+
+        # Analisar a URL
+        url_atual = driver.current_url
+
+        parsed_url_base = urlparse(BASE_URL)
+        parsed_url_atual = urlparse(url_atual)
+
+        parametros_base = parse_qs(parsed_url_base.query)
+        parametros_atual = parse_qs(parsed_url_atual.query)
+
+        # Obter o valor associado ao parâmetro 'pg' (página)
+        numero_pagina_base = parametros_base.get('pg', [])[0]
+        numero_pagina_atual = parametros_atual.get('pg', [])[0]
+
+        print(f'URL Base: {numero_pagina_base} | URL Atual: {numero_pagina_atual}')
+        print('-' * 50)
+
+        if numero_pagina_base != numero_pagina_atual:
+            PAGINA = 1
+            break
 
         # Armazenar ID da janela original
         original_window = driver.current_window_handle
 
-        # Obtenha o HTML da página
+        # Obter o HTML da página
         html_lista = driver.page_source
 
-        # Parseie o conteúdo da página com o BeautifulSoup
+        # Parseando o conteúdo da página com o BeautifulSoup
         soup_lista = BeautifulSoup(html_lista, 'html.parser')
 
-        # Encontre todas as tags <div> com a classe "itens"
+        # Encontrar todas as tags <div> com a classe "itens"
         div_itens_list = soup_lista.find_all('div', class_='itens')
 
-        # Itere sobre as tags <div> encontradas
+
+        # Função para extrair informações de tags <span>
+        def extrair_informacoes_span(tag):
+            tag_text = tag.text.strip()
+            if 'Id.Func./Vínculo' in tag_text:
+                id_func_vinculo = tag_text.split(':')[-1].strip()
+            elif 'Nome' in tag_text:
+                nome = tag_text.split(':')[-1].strip()
+            elif 'Tipo Vínculo' in tag_text:
+                tipo_vinculo = tag_text.split(':')[-1].strip().upper()
+            elif 'Cargo/Função' in tag_text:
+                cargo_funcao = tag_text.split(':')[-1].strip()
+            else:
+                id_func_vinculo = nome = tipo_vinculo = cargo_funcao = None
+            return id_func_vinculo, nome, tipo_vinculo, cargo_funcao
+
+        # Iterando sobre as tags <div> encontradas
         for div_itens in div_itens_list:
-            # Encontre a tag <p> com a classe "item-titulo" dentro de cada tag <div>
+            # Encontrando a tag <p> com a classe "item-titulo" dentro de cada tag <div>
             titulo_tag = div_itens.find('p', class_='item-titulo')
 
-            # Verifique se a tag foi encontrada antes de acessar seu texto
+            # Verificando se a tag foi encontrada antes de acessar seu texto
             if titulo_tag:
-                # Extraia o número da matéria e o nome do servidor
+                # Extraindo número e data da matéria e nome do servidor
                 link = titulo_tag.find('a')
                 if link:
-                    numero_materia = link['href'].split('=')[-1]
-                    nome_servidor = div_itens.find('p', class_='conteudo').text.split('Nome: ')[1].split('Id')[0]
+                    numero_materia = link['href'].split('=')[-1~]
+
+                    conteudo_tag = div_itens.find('p', class_='conteudo')
+                    nome_servidor = conteudo_tag.text.split('Nome: ')[1].split('Id')[0]
                     data_materia = link.text.split('-')[-1].strip()
                     data_obj = datetime.strptime(data_materia, "%d/%m/%Y")
                     data_formatada = data_obj.strftime("%Y-%m-%d")
@@ -90,62 +139,67 @@ for MES in range(1, 13):
                     existing_item = session.query(DiarioItem).filter_by(materia=numero_materia).first()
 
                     if not existing_item:
-                        # Imprima os resultados
+                        # Imprimir os resultados
                         print(f'Número da Matéria: {numero_materia}')
                         print(f'Número da Matéria: {data_formatada}')
                         print(f'Nome do Servidor: {nome_servidor}')
-                        print('-' * 50)  # Linha separadora para melhorar a legibilidade
 
                         url_materia = f'https://www.diariooficial.rs.gov.br/materia?id={numero_materia}'
 
-                        # Abre uma nova guia do navegador
+                        # Abrir uma nova guia do navegador
                         driver.execute_script("window.open('');")
 
-                        # Muda o foco para a nova guia
+                        # Mudar o foco para a nova guia
                         driver.switch_to.window(driver.window_handles[1])
 
-                        # Carrega a URL da matéria na nova guia
+                        # Carregar a URL da matéria na nova guia
                         driver.get(url_materia)
 
-                        # Espera até que a tag <div> com a classe "conteudo" seja visível
-                        WebDriverWait(driver, 10).until(
-                            EC.visibility_of_element_located((By.CLASS_NAME, 'conteudo'))
-                        )
+                        try:
+                            # Aguardar alguns segundos para garantir que a página seja carregada completamente
+                            WebDriverWait(driver, 10).until(
+                                EC.visibility_of_element_located((By.CLASS_NAME, 'conteudo'))
+                            )
+                        except TimeoutException:
+                            driver.refresh()
+                            try:
+                                WebDriverWait(driver, 10).until(
+                                    EC.visibility_of_element_located((By.CLASS_NAME, 'conteudo')),
+                                )
+                            except TimeoutException:
+                                print('-' * 50)
+                                print(f'ERRO NO MÊS  {MES}')
+                                print('-' * 50)
+                                break
 
                         html_materia = driver.page_source
                         soup_materia = BeautifulSoup(html_materia, 'html.parser')
 
-                        # Encontre todas as tags <div> com a classe "conteudo"
+                        # Encontrar todas as tags <div> com a classe "conteudo"
                         p_materia_conteudo = soup_materia.find('p', class_='conteudo')
 
-                        # Inicialize variáveis para armazenar as informações
+                        # Inicializar variáveis para armazenar as informações
                         id_func_vinculo = None
                         nome = None
                         tipo_vinculo = None
                         cargo_funcao = None
 
-                        # Verifique se a tag foi encontrada antes de acessar seu texto
+                        # Verificando se a tag foi encontrada antes de acessar seu texto
                         if p_materia_conteudo:
-                            # Itere sobre as tags <span> dentro da tag <p>
-                            for span_tag in p_materia_conteudo.find_all('span'):
-                                # Obtenha o texto da tag <span>
-                                span_text = span_tag.text.strip()
 
-                                # Verifique os padrões conhecidos e extraia as informações
-                                if 'Id.Func./Vínculo' in span_text:
-                                    id_func_vinculo = span_text.split(':')[-1].strip()
-                                elif 'Nome' in span_text:
-                                    nome = span_text.split(':')[-1].strip()
-                                elif 'Tipo Vínculo' in span_text:
-                                    tipo_vinculo = span_text.split(':')[-1].strip().upper()
-                                elif 'Cargo/Função' in span_text:
-                                    cargo_funcao = span_text.split(':')[-1].strip()
 
-                        # Imprima os resultados
+
+
+                            it =
+
+
+
+                        # Imprimir os resultados
                         print(f'ID Func./Vínculo: {id_func_vinculo}')
                         print(f'Nome: {nome}')
                         print(f'Tipo Vínculo: {tipo_vinculo}')
                         print(f'Cargo/Função: {cargo_funcao}')
+                        print('-' * 50)  # Linha separadora para melhorar a legibilidade
 
                         # Armazenar os dados no banco de dados
                         diario_item_db = DiarioItem(
@@ -157,6 +211,7 @@ for MES in range(1, 13):
                             cargo_funcao=cargo_funcao
                         )
                         session.add(diario_item_db)
+
                         # Commit das alterações no banco de dados
                         session.commit()
 
@@ -167,8 +222,6 @@ for MES in range(1, 13):
                         driver.switch_to.window(driver.window_handles[0])
         PAGINA += 1
 
-        if PAGINA > 7:
-            break
 
 # Fecha a nova guia após o término
 driver.close()

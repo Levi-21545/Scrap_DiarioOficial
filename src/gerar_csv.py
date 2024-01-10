@@ -29,5 +29,5 @@ if __name__ == "__main__":
     # Substitua 'sua_query_sql' pela consulta que retorna os dados desejados
     query_sql = 'SELECT * FROM servidores'
 
-    exportar_para_csv(query_sql, '22 23.csv')
+    exportar_para_csv(query_sql, '../data/22 23.csv')
 
