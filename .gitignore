@@ -1,0 +1,8 @@
+# Configurações específicas do PyCharm 
+/.idea/
+/__pycache__/
+
+# Jupyter Notebooks
+/.ipynb_checkpoints/
+/notebook/
+
