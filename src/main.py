@@ -17,12 +17,11 @@ from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 
 
-# Início pela página 1 do filtro
-PAGINA = 1
-
 # Seleção do ano de exercício
 MES_INICIO = int(input('Digite o mês de início: '))
 ANO = int(input('Digite o ano de exercício: '))
+PAGINA = int(input('Digite a primeira página a ser lida: '))
+
 
 # Configuração para modo headless
 chrome_options = Options()
@@ -58,16 +57,10 @@ for MES in range(MES_INICIO, 13):
         # Acessando a página inicial
         driver.get(BASE_URL)
 
-        try:
-            # Aguardar alguns segundos para garantir que a página seja carregada completamente
-            WebDriverWait(driver, 10).until(
-                EC.visibility_of_element_located((By.CLASS_NAME, 'conteudo')),
-            )
-        except TimeoutException:
-            # Redefinir a guia original e tentar recarregar
-            driver.switch_to.window(driver.window_handles[0])
-            driver.refresh()
-            continue
+        # Aguardar alguns segundos para garantir que a página seja carregada completamente
+        WebDriverWait(driver, 10).until(
+            EC.visibility_of_element_located((By.CLASS_NAME, 'conteudo')),
+        )
 
         # Analisar a URL
         url_atual = driver.current_url
@@ -101,22 +94,6 @@ for MES in range(MES_INICIO, 13):
         # Encontrar todas as tags <div> com a classe "itens"
         div_itens_list = soup_lista.find_all('div', class_='itens')
 
-
-        # Função para extrair informações de tags <span>
-        def extrair_informacoes_span(tag):
-            tag_text = tag.text.strip()
-            if 'Id.Func./Vínculo' in tag_text:
-                id_func_vinculo = tag_text.split(':')[-1].strip()
-            elif 'Nome' in tag_text:
-                nome = tag_text.split(':')[-1].strip()
-            elif 'Tipo Vínculo' in tag_text:
-                tipo_vinculo = tag_text.split(':')[-1].strip().upper()
-            elif 'Cargo/Função' in tag_text:
-                cargo_funcao = tag_text.split(':')[-1].strip()
-            else:
-                id_func_vinculo = nome = tipo_vinculo = cargo_funcao = None
-            return id_func_vinculo, nome, tipo_vinculo, cargo_funcao
-
         # Iterando sobre as tags <div> encontradas
         for div_itens in div_itens_list:
             # Encontrando a tag <p> com a classe "item-titulo" dentro de cada tag <div>
@@ -127,10 +104,14 @@ for MES in range(MES_INICIO, 13):
                 # Extraindo número e data da matéria e nome do servidor
                 link = titulo_tag.find('a')
                 if link:
-                    numero_materia = link['href'].split('=')[-1~]
+                    numero_materia = link['href'].split('=')[-1]
+                    nome_servidor = div_itens.find('p', class_='conteudo')
 
-                    conteudo_tag = div_itens.find('p', class_='conteudo')
-                    nome_servidor = conteudo_tag.text.split('Nome: ')[1].split('Id')[0]
+                    try:
+                        nome_servidor = nome_servidor.text.split('Nome: ')[1].split('Id')[0]
+                    except IndexError:
+                        continue
+
                     data_materia = link.text.split('-')[-1].strip()
                     data_obj = datetime.strptime(data_materia, "%d/%m/%Y")
                     data_formatada = data_obj.strftime("%Y-%m-%d")
@@ -155,22 +136,10 @@ for MES in range(MES_INICIO, 13):
                         # Carregar a URL da matéria na nova guia
                         driver.get(url_materia)
 
-                        try:
-                            # Aguardar alguns segundos para garantir que a página seja carregada completamente
-                            WebDriverWait(driver, 10).until(
-                                EC.visibility_of_element_located((By.CLASS_NAME, 'conteudo'))
-                            )
-                        except TimeoutException:
-                            driver.refresh()
-                            try:
-                                WebDriverWait(driver, 10).until(
-                                    EC.visibility_of_element_located((By.CLASS_NAME, 'conteudo')),
-                                )
-                            except TimeoutException:
-                                print('-' * 50)
-                                print(f'ERRO NO MÊS  {MES}')
-                                print('-' * 50)
-                                break
+                        # Espera até que a tag <div> com a classe "conteudo" seja visível
+                        WebDriverWait(driver, 10).until(
+                            EC.visibility_of_element_located((By.CLASS_NAME, 'conteudo'))
+                        )
 
                         html_materia = driver.page_source
                         soup_materia = BeautifulSoup(html_materia, 'html.parser')
@@ -187,12 +156,39 @@ for MES in range(MES_INICIO, 13):
                         # Verificando se a tag foi encontrada antes de acessar seu texto
                         if p_materia_conteudo:
 
+                            lista_span = p_materia_conteudo.find_all('span')
 
+                            # Itere sobre as tags <span> dentro da tag <p>
+                            if lista_span:
+                                for span_tag in lista_span:
+                                    # Obtenha o texto da tag <span>
+                                    span_text = span_tag.text.strip()
 
+                                    # Verifique os padrões conhecidos e extraia as informações
+                                    if 'Id.Func./Vínculo' in span_text:
+                                        id_func_vinculo = span_text.split(':')[-1].strip()
+                                    elif 'Nome' in span_text:
+                                        nome = span_text.split(':')[-1].strip()
+                                    elif 'Tipo Vínculo' in span_text:
+                                        tipo_vinculo = span_text.split(':')[-1].strip().upper()
+                                    elif 'Cargo/Função' in span_text:
+                                        cargo_funcao = span_text.split(':')[-1].strip()
+                            else:
+                                lista_for = p_materia_conteudo.find_all('p')
 
-                            it =
+                                for for_tag in lista_for:
+                                    # Obtenha o texto da tag <span>
+                                    for_text = for_tag.text.strip()
 
-
+                                    # Verifique os padrões conhecidos e extraia as informações
+                                    if 'Matricula' in for_text:
+                                        id_func_vinculo = for_text.split(':')[-1].strip()
+                                    elif 'Nome' in for_text:
+                                        nome = for_text.split(':')[-1].strip()
+                                    elif 'Tipo do Vinculo' in for_text:
+                                        tipo_vinculo = for_text.split(':')[-1].strip().upper()
+                                    elif 'Cargo/Função' in for_text:
+                                        cargo_funcao = for_text.split(':')[-1].strip()
 
                         # Imprimir os resultados
                         print(f'ID Func./Vínculo: {id_func_vinculo}')
